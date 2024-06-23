@@ -1,85 +1,95 @@
 import streamlit as st
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, BatchNormalization, Input, Flatten, Dropout, Dense, concatenate
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.activations import relu
+from tensorflow.keras.regularizers import l2
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
-from tensorflow.keras.models import load_model
+from tensorflow.keras import backend as K
 import numpy as np
-import matplotlib.pyplot as plt
+
+# Categorical focal loss
+def categorical_focal_loss(y_true, y_pred, gamma=2.5, alpha=0.5):
+    epsilon = K.epsilon()
+    y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
+    cross_entropy = -y_true * K.log(y_pred)
+    weight = alpha * y_true * K.pow((1 - y_pred), gamma)
+    loss = weight * cross_entropy
+    loss = K.sum(loss, axis=1)
+    return loss
+
+# Function to define a multi-input functional model
+def get_model_functional(input_size, filters, kernel_size, regularizerL2):
+    def conv_block(x, filter_size):
+        x = Conv2D(filter_size, (kernel_size, kernel_size), padding='same', kernel_regularizer=l2(regularizerL2))(x)
+        x = MaxPooling2D()(x)
+        x = BatchNormalization()(x)
+        x = relu(x)
+        return x
+
+    # Network 1
+    input_n1 = Input(shape=(input_size, input_size, 1))
+    x1 = conv_block(input_n1, filters[0])
+    x1 = conv_block(x1, filters[1])
+    x1 = conv_block(x1, filters[2])
+    flat_n1 = Flatten()(x1)
+
+    # Network 2
+    input_n2 = Input(shape=(input_size, input_size, 1))
+    x2 = conv_block(input_n2, filters[0])
+    flat_n2 = Flatten()(x2)
+
+    # Network 3
+    input_n3 = Input(shape=(input_size, input_size, 1))
+    x3 = conv_block(input_n3, filters[0])
+    x3 = conv_block(x3, filters[1])
+    flat_n3 = Flatten()(x3)
+
+    # Merge all networks
+    merged = concatenate([flat_n1, flat_n2, flat_n3])
+    merged = Dropout(0.5)(merged)
+    output = Dense(NUM_CLASSES, activation='softmax')(merged)
+
+    return [input_n1, input_n2, input_n3], output
+
+# Parameters
+PATCH_SIZE = 64
+NUM_CLASSES = 5
+filters_size = [64, 128, 256]
+kernel_size = 3
+regularizerL2 = 0.0005
+
+# Build the model
+inputs, output = get_model_functional(PATCH_SIZE, filters_size, kernel_size, regularizerL2)
+model = Model(inputs=inputs, outputs=output)
+
+# Compile the model
+optimizer_fcn = Adam(learning_rate=1e-4, beta_1=0.9, beta_2=0.999)
+model.compile(optimizer=optimizer_fcn, loss=categorical_focal_loss, metrics=['accuracy'])
 
 # Function to preprocess an image
-def preprocess_image(image_path, target_size=(64, 64)):
-    try:
-        img = load_img(image_path, color_mode='grayscale', target_size=target_size)
-        img_array = img_to_array(img)
-        img_array = img_array.astype('float32') / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
-        return img_array
-    except Exception as e:
-        st.error(f"Error preprocessing image: {str(e)}")
-        return None
+def preprocess_image(image_path, target_size=(PATCH_SIZE, PATCH_SIZE)):
+    img = load_img(image_path, color_mode='grayscale', target_size=target_size)
+    img_array = img_to_array(img)
+    img_array = img_array.astype('float32') / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
-# Function to load and predict using the model
-def load_and_predict(model_path, image_paths):
-    # Load the model
-    model = load_model(model_path, compile=False)
+# Streamlit app
+st.title('Multi-input Model Prediction')
 
-    # Preprocess images
-    images = []
-    for image_path in image_paths:
-        img_array = preprocess_image(image_path)
-        if img_array is not None:
-            images.append(img_array)
+# File upload for images
+uploaded_files = st.file_uploader("Choose images...", accept_multiple_files=True)
 
-    # Make predictions
-    if images:
-        predictions = model.predict(images)
-        return predictions
-    else:
-        return None
+if uploaded_files is not None:
+    for uploaded_file in uploaded_files:
+        st.write("")
+        st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
 
-# Main function to define the Streamlit app
-def main():
-    st.title('Multi-Input Functional Model with Streamlit')
+        # Preprocess and make prediction
+        image = preprocess_image(uploaded_file)
+        predictions = model.predict([image, image, image])
+        
+        # Display predictions
+        st.write(f'Predictions: {predictions}')
 
-    # File upload section
-    st.sidebar.title('Upload Image Files')
-    uploaded_files = st.sidebar.file_uploader('Choose up to 3 images...', type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
-
-    # Display uploaded images and predictions
-    if uploaded_files:
-        st.header('Uploaded Images:')
-        image_paths = []
-        for uploaded_file in uploaded_files:
-            st.subheader(f'File: {uploaded_file.name}')
-            st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
-            image_paths.append(uploaded_file)
-
-        # Button to perform predictions
-        if st.sidebar.button('Predict'):
-            st.header('Predictions:')
-            st.write('Processing...')
-
-            # Perform prediction
-            model_path = 'path_to_your_model/model.h5'  # Update with your model path
-            predictions = load_and_predict(model_path, image_paths)
-
-            # Display predictions
-            if predictions is not None:
-                st.write('Predicted probabilities:')
-                st.write(predictions)
-
-                # Display predicted class
-                predicted_class = np.argmax(predictions, axis=1)
-                st.write(f'Predicted class: {predicted_class}')
-
-                # Display bar chart of predictions
-                classes = ['Class 0', 'Class 1', 'Class 2', 'Class 3', 'Class 4']  # Update with your classes
-                plt.bar(classes, predictions[0])
-                plt.xlabel('Classes')
-                plt.ylabel('Probability')
-                plt.title('Predicted Probabilities')
-                st.pyplot(plt)
-            else:
-                st.write('No valid images to predict.')
-
-# Entry point of the Streamlit app
-if __name__ == '__main__':
-    main()
