@@ -81,7 +81,7 @@ st.title('Multi-input Model Prediction')
 # File upload for images
 uploaded_files = st.file_uploader("Choose images...", accept_multiple_files=True)
 
-if uploaded_files is not None:
+if uploaded_files:
     for uploaded_file in uploaded_files:
         st.write("")
         st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
