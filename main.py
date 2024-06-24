@@ -7,6 +7,7 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 from tensorflow.keras import backend as K
 import numpy as np
+import os
 
 # Categorical focal loss
 def categorical_focal_loss(y_true, y_pred, gamma=2.5, alpha=0.5):
@@ -54,7 +55,7 @@ def get_model_functional(input_size, filters, kernel_size, regularizerL2):
 
 # Parameters
 PATCH_SIZE = 64
-NUM_CLASSES = 5
+NUM_CLASSES = 2  # Adjust this if your dataset has more classes
 filters_size = [64, 128, 256]
 kernel_size = 3
 regularizerL2 = 0.0005
@@ -75,11 +76,34 @@ def preprocess_image(image_path, target_size=(PATCH_SIZE, PATCH_SIZE)):
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
+# Function to load images from a directory
+def load_images_from_dir(directory):
+    images = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+            img_path = os.path.join(directory, filename)
+            images.append(img_path)
+    return images
+
 # Streamlit app
 st.title('Multi-input Model Prediction')
 
 # File upload for images
+st.write("### Upload Images")
 uploaded_files = st.file_uploader("Choose images...", accept_multiple_files=True)
+
+# Directory selection for test and train images
+test_dir = 'test'
+train_dir = 'train'
+
+# Load images from test directory
+test_images = load_images_from_dir(test_dir)
+
+# Load images from train directory
+train_images = load_images_from_dir(train_dir)
+
+# Combine images from test and train directories
+all_images = test_images + train_images
 
 if uploaded_files:
     for uploaded_file in uploaded_files:
@@ -95,8 +119,14 @@ if uploaded_files:
         st.markdown(f'<p style="color:green;">Predictions: {predictions_text}</p>', unsafe_allow_html=True)
         
         # Add messages for prediction confidence levels
-        if np.max(predictions) > 0.2:  # Lower threshold for testing purposes
+        max_prediction = np.max(predictions)
+        predicted_class = np.argmax(predictions)
+
+        if max_prediction > 0.2:  # Lower threshold for testing purposes
             st.markdown('<p style="color:green;">This is a good prediction!</p>', unsafe_allow_html=True)
-            st.markdown('<p style="color:green;">The X-ray results are good!</p>', unsafe_allow_html=True)
-        elif np.max(predictions) < 0.1:
+            if predicted_class == 0:
+                st.markdown('<p style="color:green;">The X-ray results are NORMAL.</p>', unsafe_allow_html=True)
+            else:
+                st.markdown('<p style="color:green;">The X-ray results show PNEUMONIA.</p>', unsafe_allow_html=True)
+        elif max_prediction < 0.1:
             st.markdown('<p style="color:red;">This prediction is not confident. The X-ray results may not be good.</p>', unsafe_allow_html=True)
