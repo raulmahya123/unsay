@@ -89,7 +89,14 @@ if uploaded_files is not None:
         # Preprocess and make prediction
         image = preprocess_image(uploaded_file)
         predictions = model.predict([image, image, image])
-        
-        # Display predictions
-        st.write(f'Predictions: {predictions}')
 
+        # Format predictions for display
+        predictions_text = ", ".join([f"{pred:.2f}" for pred in predictions[0]])
+        st.markdown(f'<p style="color:green;">Predictions: {predictions_text}</p>', unsafe_allow_html=True)
+        
+        # Add messages for prediction confidence levels
+        if np.max(predictions) > 0.2:  # Lower threshold for testing purposes
+            st.markdown('<p style="color:green;">This is a good prediction!</p>', unsafe_allow_html=True)
+            st.markdown('<p style="color:green;">The X-ray results are good!</p>', unsafe_allow_html=True)
+        elif np.max(predictions) < 0.1:
+            st.markdown('<p style="color:red;">This prediction is not confident. The X-ray results may not be good.</p>', unsafe_allow_html=True)
